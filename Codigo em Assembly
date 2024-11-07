@@ -1,97 +1,276 @@
 .data
-    nums: .word 510, 247, -107, 858, 465, 777, -728, -15, 165, 717, 323, 968, 636, 906, -555, -300, -580, -264, 189, -739, 996, -867, 400, -334, 969, 786, -655, -630, -461, 255, -221, 510, 391, 745, 306, -444, 661, -564, -804, -99, -885, 444, 28, 763, -878, 682, 418, -558, -719, 55, -78, 977, -885, -666, -467, -151, -831, 720, 31, -796, -285, -573, 211, 517, -587, -519, -296, -499, 974, 85, -645, 129, 823, 740, -667, 286, -652, -856, -186, 83, 600, 132, -117, -905, -683, 81, -368, 738, 498, -257, 54, 796, 142, -519, -348, -485, 16, -989, -58, -770
-    # Lista.txt onde os numeros aparecem desordenados
-    nums_count: .word 100 # Quantidade total de números na lista
-    comma: .asciiz ","   # O uso da Vírgula
+
+    # Caminhos dos arquivos
+    caminho: .asciiz "C:\\Users\\lucas\\OneDrive\\Documentos\\mars\\lista.txt"  # Arquivo de entrada com os dados a serem processados
+    caminho_saida: .asciiz "C:\\Users\\lucas\\OneDrive\\Documentos\\mars\\lista_ordenada.txt"  # Arquivo de saída para a lista ordenada
+
+    # Variáveis para formatação de saída
+    newline: .asciiz "\n"    # Para pular uma linha ao exibir na tela
+    espaco: .asciiz ","      # Usado para separar números na saída
+
+    .align 2                 # Alinha os dados na memória para garantir um acesso eficiente
+    buffer: .space 1024      # Espaço temporário para armazenar dados lidos do arquivo
+    result: .space 1024      # Armazena os resultados dos inteiros após a conversão
+    string_temp: .space 12   # Espaço temporário para armazenar números convertidos (com sinal, se necessário)
+    buffer_saida: .space 1024 # Espaço para guardar a lista ordenada antes de salvar no arquivo
+
 
 .text
-.globl main
 
-main:
-    # Carrega o endereço da lista de números
-    la $t0, nums          # $t0 -> início da lista de números
-    lw $t1, nums_count    # $t1 -> quantidade de números (100)
+    # 1 - LEITURA DO ARQUIVO DE ENTRADA
+
+    # ABERTURA DO ARQUIVO
+    li $v0, 13               			# Código 13: syscall para abrir arquivo
+    la $a0, caminho        				# Endereço do caminho do arquivo
+    li $a1, 0               			# Modo 0 = leitura
+    syscall                 			# Executa a abertura do arquivo
+
+    move $s0, $v0           			# Salva o descritor do arquivo em $s0 para uso futuro
+
+    # LEITURA DO ARQUIVO
+    li $v0, 14              			# Código 14: syscall para ler arquivo
+    move $a0, $s0           			# Descritor do arquivo vai em $a0
+    la $a1, buffer          			# Endereço do buffer onde os dados serão lidos
+    la $a2, 1024            			# Máximo de 1024 bytes a serem lidos
+    syscall                 			# Executa a leitura do arquivo
+
+    # FECHAMENTO DO ARQUIVO
+    li $v0, 16              			# Código 16: syscall para fechar arquivo
+    move $a0, $s0           			# Descritor do arquivo em $a0
+    syscall                 			# Fecha o arquivo
+
+    # INICIALIZAÇÃO DE VARIÁVEIS PARA CONVERSÃO
+    la $t0, buffer          			# Ponteiro para o início do buffer
+    la $t5, result          			# Ponteiro para o array onde os números serão salvos
+
+    li $t1, 0               			# Acumulador para construir o número atual
+
+    # Variáveis auxiliares para a conversão
+    li $t2, 10              			# Base decimal (multiplicador)
+    li $t3, 48              			# Valor ASCII do '0' para converter de ASCII para decimal
+    li $t4, 1               			# Sinal do número (1 = positivo, -1 = negativo)
+
+    # Ordenação
+    li $t8, 0               			# Contador de números processados para o bubble sort
+
     
-    # Ordenação Bubble Sort
-    li $t2, 0             # i = 0
-outer_loop:
-    bge $t2, $t1, end_outer_loop  # Se i >= 100, sai do loop
+# LOOP PRINCIPAL DE CONVERSÃO
+converte_string_loop:
+    
+    lb $t6, 0($t0)         				# Carrega o próximo caractere da string
+    
+    # Verifica se chegou ao fim da string
+    beqz $t6, fim_conversao    				# Se for terminador nulo (fim da string), sai do loop
 
-    li $t3, 0             # j = 0
-inner_loop:
-    addi $t4, $t3, 1      # j + 1
-    mul $t5, $t3, 4       # j * 4 (offset em bytes)
-    add $t6, $t0, $t5     # Endereço de nums[j]
-    lw $t7, 0($t6)        # $t7 = nums[j]
-    lw $t8, 4($t6)        # $t8 = nums[j + 1]
+    # Verifica se o caractere é um sinal negativo
+    li $t7, 45             				# ASCII do caractere '-'
+    beq $t6, $t7, set_negative    			# Se for '-', pula para tratamento de número negativo
+    
+    # Verifica se o caractere é vírgula
+    li $t7, 44             				# ASCII da vírgula (separador de números)
+    beq $t6, $t7, armazena_numero    			# Se for vírgula, armazena o número e começa o próximo
+    
+    # Converte o caractere de dígito ASCII para o valor decimal
+    sub $t6, $t6, $t3      				# Subtrai '0' (0x30) para obter o valor decimal
+    mul $t1, $t1, $t2      				# Multiplica o acumulador por 10 (move para a próxima casa decimal)
+    add $t1, $t1, $t6      				# Adiciona o novo dígito ao acumulador
 
-    # Se nums[j] > nums[j + 1], troca
-    bgt $t7, $t8, swap
-    j skip_swap
+    addi $t0, $t0, 1       				# Avança para o próximo caractere
+    j converte_string_loop  				# Volta ao início do loop para processar o próximo caractere
 
-swap:
-    sw $t8, 0($t6)        # nums[j] = nums[j + 1]
-    sw $t7, 4($t6)        # nums[j + 1] = nums[j]
+    
+# TRATAMENTO DE NÚMERO NEGATIVO
+set_negative:
+    li $t4, -1             				# Define o sinal como negativo
+    addi $t0, $t0, 1       				# Avança para o próximo caractere
+    j converte_string_loop 				# Volta ao loop principal
 
-skip_swap:
-    addi $t3, $t3, 1      # j++
-    blt $t3, $t1, inner_loop  # Continua o loop interno
+# ARMAZENAMENTO DE NÚMERO CONVERTIDO
+armazena_numero:
+    mul $t1, $t1, $t4      				# Aplica o sinal ao número (positivo ou negativo)
+    sw $t1, 0($t5)         				# Armazena o número convertido no array
+    addi $t5, $t5, 4       				# Avança para a próxima posição do array
+    addi $t8, $t8, 1       				# Incrementa o contador de números
+    
+    # Reinicializa variáveis para o próximo número
+    li $t1, 0              				# Zera o acumulador
+    li $t4, 1              				# Reseta o sinal para positivo
+    addi $t0, $t0, 1       				# Avança para o próximo caractere
+    j converte_string_loop  				# Volta ao loop principal
 
-    addi $t2, $t2, 1      # i++
-    j outer_loop          # Continua o loop externo
+# FINALIZAÇÃO DA CONVERSÃO
+fim_conversao:
+    bnez $t1, armazena_ultimo				# Se ainda houver número no acumulador, armazena ele
 
-end_outer_loop:
-    # Exibe os números ordenados
-    li $t2, 0             # i = 0
-print_loop:
-    bge $t2, $t1, end_print_loop  # Se i >= 100, sai do loop
-    lw $a0, 0($t0)        # Carrega o número
+# ARMAZENA ÚLTIMO NÚMERO
+armazena_ultimo:
+    mul $t1, $t1, $t4      				# Aplica o sinal ao último número
+    sw $t1, 0($t5)         				# Armazena o número no array
+    addi $t8, $t8, 1       				# Incrementa o contador de números
 
-    # Exibe o número
-    li $v0, 1             # Código de serviço para print integer
-    syscall                # Exibe o número
+# ORDENAÇÃO
+ordena_numeros:
+    li $t9, 0						# Reseta a flag de troca
+    la $s1, result               			# Carrega o endereço inicial do array 'result'
 
-    # Se não for o último número, imprime uma vírgula
-    addi $t2, $t2, 1      # i++
-    bge $t2, $t1, end_print_loop  # Se for o último número, sai
-    li $v0, 4             # Código para print string
-    la $a0, comma         # Carrega o endereço da vírgula
-    syscall                # Exibe a vírgula
+# Início do loop externo do bubble sort
+bubble_sort_externo:
+    li $t0, 0                    			# Contador interno reiniciado a cada iteração
 
-    addi $t0, $t0, 4      # Avança para o próximo número
-    j print_loop
+# Início do loop interno do bubble sort
+bubble_sort_interno:
+    subi $t7, $t8, 1				# Decrementa contador de números para evitar erro de índice
 
-end_print_loop:
-    # Finaliza o programa
-    li $v0, 10
+    # Verifica se chegou na penúltima posição
+    bge $t0, $t7, verifica_troca		# Se $t0 >= $t7, não há mais o que trocar
+
+    # Carrega dois números consecutivos para comparar
+    lw $t1, 0($s1)               			# Carrega o número atual em $t1
+    lw $t2, 4($s1)               			# Carrega o próximo número em $t2
+
+    # Compara e troca se necessário
+    ble $t1, $t2, sem_troca				# Se $t1 <= $t2, não há troca
+
+    # Troca os números
+    sw $t2, 0($s1)               			# Coloca o valor de $t2 na posição de $t1
+    sw $t1, 4($s1)               			# Coloca o valor de $t1 na posição de $t2
+    li $t9, 1                    			# Sinaliza que houve troca
+
+sem_troca:
+    addi $s1, $s1, 4             			# Avança para o próximo par de números
+    addi $t0, $t0, 1             			# Incrementa contador interno
+    j bubble_sort_interno          			# Repete o loop interno
+
+# Verifica se houve troca no loop interno
+verifica_troca:
+    beq $t9, $zero, imprime_numeros		# Se não houve troca, o array está ordenado
+
+    li $t9, 0                    			# Reseta a flag de troca
+    la $s1, result               			# Reinicia o ponteiro para o início do array
+    j bubble_sort_externo          			# Repete o loop externo
+
+# IMPRESSÃO DOS NÚMEROS
+imprime_numeros:
+    la $t0, result         				# Reinicia o ponteiro para o início do array
+    li $t1, 0              				# Zera o contador de números impressos
+
+# LOOP DE IMPRESSÃO
+loop_imprime:
+    beq $t1, $t8, escrever_arquivo      		# Se todos os números foram impressos, vai para escrever_arquivo
+
+    # Imprime número
+    li $v0, 1             				# Syscall para imprimir inteiro
+    lw $a0, 0($t0)         				# Carrega o próximo número do array
+    syscall                				# Imprime o número
+    
+    # Imprime espaço após o número
+Imprime_espaço:
+    li $v0, 4              				# Syscall para imprimir string
+    la $a0, espaco         				# Carrega o endereço do espaço
+    syscall                				# Imprime o espaço
+    
+    addi $t0, $t0, 4       				# Avança para o próximo número no array
+    addi $t1, $t1, 1       				# Incrementa o contador de números impressos
+    j loop_imprime         				# Repete o loop de impressão
+    
+# Após a ordenação, vamos escrever no arquivo
+escrever_arquivo:
+    # Abrir arquivo para escrita
+    li $v0, 13               				# Syscall para abrir arquivo
+    la $a0, caminho_saida    				# Endereço do caminho do arquivo de saída
+    li $a1, 1                				# Modo 1 = escrita
+    li $a2, 0                				# Permissões do arquivo (Linux/Unix)
     syscall
+    
+    move $s6, $v0           				# Salva o descritor do arquivo
+    
+    # Preparar para conversão e escrita
+    la $s0, result          				# Endereço do array 'result' com números ordenados
+    la $s1, buffer_saida    				# Buffer onde a string será construída
+    li $s2, 0               				# Contador de números processados
+    
+loop_conversao:
+    beq $s2, $t8, finalizar_escrita  		# Se todos os números foram processados, termina
 
-# Rotina para calcular o tamanho da string
-# Entrada: $a0 = endereço da string
-# Saída: $v0 = tamanho da string
-string_length:
-    li $v0, 0             # Tamanho = 0
-length_loop:
-    lb $t0, 0($a0)        # Carrega byte da string
-    beqz $t0, length_done # Se o byte for nulo, termina
-    addi $v0, $v0, 1      # Tamanho++
-    addi $a0, $a0, 1      # Próximo byte
-    j length_loop
-length_done:
-    jr $ra                # Retorna
+    # Carregar próximo número
+    lw $t0, ($s0)           				# Carrega o número inteiro (ex: 754)
+    
+    # Converter para string
+    move $t1, $t0           				# Copia o número para trabalhar
+    la $t2, string_temp     				# Buffer temporário para o número
+    li $t3, 0               				# Contador de dígitos (precisa contar para formar a string)
+    
+    # Tratar número negativo
+    bgez $t1, inicio_conversao				# Se o número for positivo, pula para conversão
+    neg $t1, $t1            				# Torna o número positivo
+    li $t4, 45              				# ASCII do '-'
+    sb $t4, ($s1)           				# Escreve o '-' no buffer
+    addi $s1, $s1, 1        				# Avança o ponteiro no buffer
+    
+inicio_conversao:
+    beqz $t1, numero_zero   					# Se o número for zero, trata separadamente
 
-# Rotina para converter string para inteiro
-# Entrada: $a0 = endereço da string
-# Saída: $v0 = valor inteiro
-string_to_int:
-    li $v0, 0             # Inicializa o resultado
-convert_loop:
-    lb $t0, 0($a0)        # Carrega byte da string
-    beqz $t0, convert_done # Se o byte for nulo, termina
-    sub $t0, $t0, '0'     # Converte caractere para número
-    mul $v0, $v0, 10      # Multiplica o resultado por 10
-    add $v0, $v0, $t0     # Adiciona o dígito
-    addi $a0, $a0, 1      # Próximo byte
-    j convert_loop
-convert_done:
-    jr $ra                # Retorna    
+# Processo de empilhamento dos dígitos (divisão sucessiva por 10)
+empilhar_digitos:
+    divu $t1, $t1, 10       				# Divide por 10 (divisão unsigned para números positivos)
+    mfhi $t4                				# Obtém o resto (dígito) da divisão e coloca em $t4
+    addi $t4, $t4, 48       				# Converte o dígito para ASCII (de 0-9 para '0'-'9')
+
+    addi $sp, $sp, -4       				# Reserva espaço na pilha (decrementa $sp)
+    sw $t4, ($sp)						# Armazena o dígito na pilha
+    
+    addi $t3, $t3, 1        				# Incrementa o contador de dígitos
+    mflo $t1                				# Atualiza $t1 com o quociente para próxima iteração
+    bnez $t1, empilhar_digitos 				# Se houver mais dígitos, repete o processo
+    
+# Desempilhar os dígitos e formar o número
+desempilhar_digitos:
+    beqz $t3, fim_numero    					# Se não há mais dígitos, termina o número
+    
+    lw $t4, ($sp)           					# Desempilha um dígito da pilha
+    addi $sp, $sp, 4        					# Libera o espaço na pilha (incrementa $sp)
+
+    sb $t4, ($s1)           					# Escreve o dígito no buffer
+    addi $s1, $s1, 1        					# Avança o ponteiro do buffer
+    addi $t3, $t3, -1       					# Decrementa o contador de dígitos
+    j desempilhar_digitos          			# Repete até desempilhar todos os dígitos
+
+# Caso especial para zero
+numero_zero:
+    li $t4, 48              					# ASCII do caractere '0'
+    sb $t4, ($s1)           					# Escreve '0' no buffer
+    addi $s1, $s1, 1        					# Avança ponteiro do buffer
+
+fim_numero:
+    # Adiciona um espaço após o número
+    li $t4, 44              					# ASCII do espaço
+    sb $t4, ($s1)           					# Escreve espaço no buffer
+    addi $s1, $s1, 1        					# Avança ponteiro do buffer
+
+    # Prepara para o próximo número
+    addi $s0, $s0, 4        					# Avança para o próximo número no array
+    addi $s2, $s2, 1        					# Incrementa contador de números processados
+    j loop_conversao       					# Volta para o loop de conversão
+    
+finalizar_escrita:
+    # Remover último espaço e adicionar terminador nulo
+    addi $s1, $s1, -1      					# Volta um caractere (remove o último espaço)
+    sb $zero, ($s1)        					# Coloca o terminador nulo no final da string
+
+    # Escrever buffer no arquivo
+    li $v0, 15              					# Syscall para escrever no arquivo
+    move $a0, $s6           					# Descritor do arquivo (em $s6)
+    la $a1, buffer_saida    					# Endereço do buffer com os dados a escrever
+    la $t0, buffer_saida    					# Início do buffer
+    sub $a2, $s1, $t0       					# Calcula o tamanho do conteúdo no buffer
+    syscall                  				# Executa a syscall para escrever no arquivo
+
+    # Fechar o arquivo após escrever
+    li $v0, 16              					# Syscall para fechar o arquivo
+    move $a0, $s6           					# Descritor do arquivo
+    syscall                  				# Executa a syscall de fechamento
+
+    # Encerrar o programa
+end:
+    li $v0, 10              					# Syscall para finalizar o programa
+    syscall                  				# Executa a syscall de término
